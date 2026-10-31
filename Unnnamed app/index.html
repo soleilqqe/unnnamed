@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>○</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-dark: #070709;
+            --bg-radial: #111116;
+            --glass-bg: rgba(255, 255, 255, 0.04);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f4f4f6;
+            --text-muted: #8e8e99;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: radial-gradient(circle at 50% 58%, var(--bg-radial) 0%, var(--bg-dark) 75%);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', Roboto, Helvetica, Arial, sans-serif;
+            position: fixed;
+            touch-action: manipulation;
+        }
+
+        .app-shell {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            /* Сдвиг вниз, чтобы не наезжать на системную шапку Telegram ("Закрыть" и меню) */
+            padding-top: calc(env(safe-area-inset-top, 24px) + 68px);
+            padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 32px);
+            padding-left: 20px;
+            padding-right: 20px;
+            position: relative;
+        }
+
+        /* Кнопка звука опущена ниже системных трех точек Telegram */
+        .sound-toggle {
+            position: absolute;
+            top: calc(env(safe-area-inset-top, 24px) + 58px);
+            right: 20px;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #9ca3af;
+            cursor: pointer;
+            z-index: 40;
+            transition: transform 0.15s ease, background 0.2s ease, color 0.2s ease;
+        }
+
+        .sound-toggle:active {
+            transform: scale(0.9);
+        }
+
+        .sound-toggle.muted {
+            color: #4b5563;
+            background: rgba(255, 255, 255, 0.02);
+            border-color: rgba(255, 255, 255, 0.04);
+        }
+
+        /* Верхний блок: счетчик + капсула с фразой + глобальная полоса */
+        .top-cluster {
+            width: 100%;
+            max-width: 350px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            z-index: 20;
+        }
+
+        .score-display {
+            font-size: 64px;
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: -2px;
+            font-variant-numeric: tabular-nums;
+            background: linear-gradient(180deg, #ffffff 0%, #d8d8df 65%, #9a9aa6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 6px 24px rgba(255, 255, 255, 0.09));
+            transition: transform 0.08s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+            will-change: transform;
+        }
+
+        .score-display.bump {
+            transform: scale(1.06);
+        }
+
+        .phrase-pill {
+            min-height: 36px;
+            padding: 8px 18px;
+            border-radius: 999px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.06);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            max-width: 100%;
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }
+
+        .phrase-pill.fade-out {
+            opacity: 0;
+            transform: translateY(-3px);
+        }
+
+        .phrase-text {
+            font-size: 12.5px;
+            font-weight: 500;
+            color: #a6a6b2;
+            letter-spacing: -0.1px;
+            line-height: 1.3;
+        }
+
+        /* Глобальная полоса всех кликов до 1 000 000 прямо под фразой */
+        .global-bar-wrap {
+            width: 100%;
+            max-width: 280px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .global-bar-track {
+            width: 100%;
+            height: 7px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .global-bar-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.92) 100%);
+            box-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
+            transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .global-bar-stats {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            font-weight: 600;
+            color: #6e6e7a;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.2px;
+        }
+
+        .global-live-dot {
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #d4d4dc;
+            box-shadow: 0 0 6px rgba(255, 255, 255, 0.7);
+            margin-right: 5px;
+            vertical-align: middle;
+            animation: pulseDot 2s infinite ease-in-out;
+        }
+
+        @keyframes pulseDot {
+            0%, 100% { opacity: 0.35; }
+            50% { opacity: 1; }
+        }
+
+        /* Центральная зона с черной 3D-сферой */
+        .center-stage {
+            flex: 1;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            perspective: 900px;
+            position: relative;
+        }
+
+        .sphere-outer {
+            width: 264px;
+            height: 264px;
+            border-radius: 50%;
+            position: relative;
+            cursor: pointer;
+            transform-style: preserve-3d;
+            transition: transform 0.12s cubic-bezier(0.2, 0.85, 0.3, 1);
+            /* Глубокий темный обод с бликом сверху слева как на скрине */
+            background: radial-gradient(circle at 28% 24%, #32323c 0%, #17171d 38%, #09090c 78%, #1e1e26 100%);
+            box-shadow:
+                0 30px 70px rgba(0, 0, 0, 0.92),
+                0 0 55px rgba(255, 255, 255, 0.03),
+                inset 0 2px 4px rgba(255, 255, 255, 0.22),
+                inset 0 -6px 16px rgba(0, 0, 0, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        /* Внутреннее глянцевое темное ядро сферы */
+        .sphere-inner {
+            width: 204px;
+            height: 204px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 28%, #1d1d24 0%, #101014 55%, #070709 100%);
+            box-shadow:
+                inset 0 8px 22px rgba(0, 0, 0, 0.95),
+                inset 0 -2px 6px rgba(255, 255, 255, 0.05),
+                0 1px 2px rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            pointer-events: none;
+        }
+
+        /* Вылетающие +1 */
+        .floating-plus {
+            position: fixed;
+            pointer-events: none;
+            font-size: 23px;
+            font-weight: 800;
+            color: rgba(255, 255, 255, 0.88);
+            text-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+            z-index: 99;
+            animation: floatUp 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes floatUp {
+            0% {
+                opacity: 1;
+                transform: translate3d(0, 0, 0) scale(0.85);
+            }
+            100% {
+                opacity: 0;
+                transform: translate3d(var(--tx, 0px), -95px, 0) scale(1.12);
+            }
+        }
+
+        .bottom-spacer {
+            height: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+        <!-- Иконка звука ниже системной шапки -->
+        <button class="sound-toggle" id="soundToggle" aria-label="Sound">
+            <svg id="soundIconOn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+            </svg>
+            <svg id="soundIconOff" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <line x1="23" y1="9" x2="17" y2="15"></line>
+                <line x1="17" y1="9" x2="23" y2="15"></line>
+            </svg>
+        </button>
+
+        <!-- Верхний блок: счет + фраза + общая полоса на всех -->
+        <div class="top-cluster">
+            <div class="score-display" id="scoreDisplay">0</div>
+
+            <div class="phrase-pill" id="phrasePill">
+                <span class="phrase-text" id="phraseText">Вероятно ничего</span>
+            </div>
+
+            <div class="global-bar-wrap">
+                <div class="global-bar-track">
+                    <div class="global-bar-fill" id="globalBarFill"></div>
+                </div>
+                <div class="global-bar-stats">
+                    <span><span class="global-live-dot"></span><span id="globalLabel">Общий цикл</span></span>
+                    <span id="globalCounterText">0 / 1 000 000</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Центральная кнопка-сфера -->
+        <div class="center-stage">
+            <div class="sphere-outer" id="tapSphere" role="button" tabindex="0">
+                <div class="sphere-inner"></div>
+            </div>
+        </div>
+
+        <div class="bottom-spacer"></div>
+    </div>
+
+    <script>
+        (function () {
+            // Адрес вашего Cloudflare Worker (или '/api/sync' при использовании Cloudflare Pages Functions)
+            const API_ENDPOINT = '/api/sync';
+
+            // Инициализация Telegram Mini App
+            const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+            if (tg) {
+                try {
+                    tg.ready();
+                    tg.expand();
+                    if (tg.setHeaderColor) tg.setHeaderColor('#070709');
+                    if (tg.setBackgroundColor) tg.setBackgroundColor('#070709');
+                    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+                } catch (e) {}
+            }
+
+            // Уникальный ID игрока (из Telegram или локальный резервный)
+            const tgUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : null;
+            let userId = tgUser && tgUser.id ? String(tgUser.id) : localStorage.getItem('pure_tap_uid_v2');
+            if (!userId) {
+                userId = 'anon_' + Math.random().toString(36).substring(2, 11);
+                localStorage.setItem('pure_tap_uid_v2', userId);
+            }
+
+            // Определение языка (RU, UZ, EN)
+            const rawLang = (tgUser && tgUser.language_code)
+                || navigator.language
+                || 'ru';
+            const lang = rawLang.toLowerCase().startsWith('uz')
+                ? 'uz'
+                : (rawLang.toLowerCase().startsWith('ru') ? 'ru' : 'en');
+
+            const UI_STRINGS = {
+                ru: { globalCycle: 'Общий цикл' },
+                en: { globalCycle: 'Global cycle' },
+                uz: { globalCycle: 'Umumiy sikl' }
+            };
+
+            document.getElementById('globalLabel').textContent = UI_STRINGS[lang].globalCycle;
+
+            // Пасхалки на красивые числа (как 777 на скриншоте)
+            const MILESTONE_PHRASES = {
+                ru: {
+                    100: 'Первая сотня ушла в тишину',
+                    333: 'Тройной ритм. Продолжай в том же духе',
+                    500: 'Пятьсот касаний. Половина первой тысячи позади',
+                    777: 'Три топора на удачу. В прошлый раз удача пригодилась',
+                    1000: 'Первая тысяча зафиксирована в памяти',
+                    5000: 'Пять тысяч. Тебя уже сложно назвать случайным гостем',
+                    10000: 'Десять тысяч кликов в полной темноте'
+                },
+                en: {
+                    100: 'First hundred dissolved into silence',
+                    333: 'Triple rhythm. Keep the pulse going',
+                    500: 'Five hundred taps. Halfway to the first thousand',
+                    777: 'Triple seven for luck. Last time luck paid off',
+                    1000: 'First thousand locked in memory',
+                    5000: 'Five thousand. You are no longer a random visitor',
+                    10000: 'Ten thousand taps in pure darkness'
+                },
+                uz: {
+                    100: 'Birinchi yuzlik sukunatga ketdi',
+                    333: 'Uchlik ritm. Shu ruhda davom eting',
+                    500: 'Besh yuz bosish. Birinchi minglikning yarmi',
+                    777: 'Omad uchun 777. O‘tgan safar omad ish bergan edi',
+                    1000: 'Birinchi minglik xotiraga muhrlandi',
+                    5000: 'Besh ming. Siz endi tasodifiy mehmon emassiz',
+                    10000: 'Qorong‘ulikda o‘n mingta bosish'
+                }
+            };
+
+            // Большая колода фраз без повторов (алгоритм Фишера-Йетса)
+            const PHRASES_POOL = {
+                ru: [
+                    'Вероятно ничего',
+                    'В прошлый раз тоже смеялись над пустым экраном',
+                    'Каждый тап двигает общую полосу вперед',
+                    'Никаких обещаний. Только счетчик и сфера',
+                    'Снепшоты любят тех, кто пришел раньше толпы',
+                    'История повторяется в полной тишине',
+                    'Когда полоса дойдет до конца, экран изменится',
+                    'Один в поле воин, но миллион быстрее бить вместе',
+                    'Просто круглая кнопка. Как тогда, в январе',
+                    'Кто понял намек, тот не закрывает вкладку',
+                    'Никаких цветных баннеров. Чистый счет',
+                    'Пока остальные ждут новостей, счетчик крутится',
+                    'Тишина перед обновлением всегда самая громкая',
+                    'Общая шкала растет от каждого живого касания',
+                    'Все великие истории начинались с одной кнопки',
+                    'Никто не знает, сколько весит один клик завтра',
+                    'Пальцы помнят эту механику лучше любых инструкций',
+                    'Без имени. Без шума. Без лишних слов',
+                    'Капля за каплей набирается первый миллион',
+                    'Первые всегда забирают самую чистую долю',
+                    'В темноте видно только тех, кто продолжает нажимать',
+                    'Счет сохраняется в облаке после каждого импульса',
+                    'Не верь слухам, верь только цифрам над сферой',
+                    'Ранний доступ выглядит именно так',
+                    'Еще немного, и первый цикл будет закрыт',
+                    'Те, кто пропустил первый раз, теперь смотрят внимательнее',
+                    'Проще некуда: палец, экран и растущий баланс',
+                    'Никаких сложных правил до первого миллиона',
+                    'Система фиксирует активность каждого узла',
+                    'Здесь нет случайных людей, только ранние',
+                    'Полоса сверху объединяет всех, кто внутри прямо сейчас',
+                    'Меньше интерфейса, больше ценности в каждом клике',
+                    'Когда все узнают, счетчик будет уже семизначным',
+                    'Спокойный ритм бьет любую суету',
+                    'Сфера не меняет цвет. Она просто считает'
+                ],
+                en: [
+                    'Probably nothing',
+                    'Last time people laughed at an empty screen too',
+                    'Every tap pushes the global bar forward',
+                    'No promises. Just a counter and a sphere',
+                    'Snapshots favor those who arrived before the crowd',
+                    'History repeats itself in total silence',
+                    'When the bar fills up, the screen will evolve',
+                    'One tap is small, a million together is fast',
+                    'Just a round button. Like back in January',
+                    'Those who get the hint never close the app',
+                    'No flashy banners. Pure numbers',
+                    'While others wait for news, the counter spins',
+                    'The silence before an update is always the loudest',
+                    'The global bar grows with every real tap',
+                    'Every big story started with a single button',
+                    'Nobody knows what one tap weighs tomorrow',
+                    'Muscle memory knows this better than any guide',
+                    'Unnamed. Unannounced. Uncluttered',
+                    'Drop by drop the first million is forged',
+                    'Early birds always claim the cleanest share',
+                    'In the dark, only those who keep tapping stand out',
+                    'Progress is synced after every pulse',
+                    'Ignore the noise, trust the digits above the sphere',
+                    'This is what true early access looks like',
+                    'Closer and closer to unlocking Cycle One',
+                    'Those who missed out last time are watching closely now'
+                ],
+                uz: [
+                    'Ehtimol hech narsa',
+                    'O‘tgan safar ham bo‘sh ekran ustidan kulishgan edi',
+                    'Har bir bosish umumiy chiziqni oldinga suradi',
+                    'Va’dalarsiz. Faqat hisoblagich va sfera',
+                    'Snapshotlar hammadan oldin kelganlarni yoqtiradi',
+                    'Tarix sukunatda takrorlanadi',
+                    'Chiziq to‘lganda ekran yangilanadi',
+                    'Bir kishi oz, ko‘pchilik bilan million tez yig‘iladi',
+                    'Oddiy dumaloq tugma. O‘sha yanvardagidek',
+                    'Ishorani tushunganlar ilovani yopmaydi',
+                    'Ortiqcha reklamasiz. Faqat sof hisob',
+                    'Boshqalar yangilik kutayotganda hisoblagich aylanmoqda',
+                    'Yangilanish oldidan sukunat har doim eng kuchli',
+                    'Umumiy chiziq har bir jonli bosishdan o‘sadi',
+                    'Har bir katta tarix bitta tugmadan boshlangan'
+                ]
+            };
+
+            const STORAGE_KEY_SCORE = 'pure_tap_score_v2';
+            const STORAGE_KEY_GLOBAL = 'pure_tap_global_v2';
+            const STORAGE_KEY_MUTE = 'pure_tap_mute_v2';
+            const GLOBAL_TARGET = 1000000;
+
+            let score = 0;
+            // Никакой фейковой накрутки: только реальные клики людей из базы
+            let globalScore = 0;
+            let pendingTaps = 0;
+            let isMuted = localStorage.getItem(STORAGE_KEY_MUTE) === '1';
+            let phraseDeck = [];
+
+            const scoreDisplay = document.getElementById('scoreDisplay');
+            const phrasePill = document.getElementById('phrasePill');
+            const phraseText = document.getElementById('phraseText');
+            const globalBarFill = document.getElementById('globalBarFill');
+            const globalCounterText = document.getElementById('globalCounterText');
+            const tapSphere = document.getElementById('tapSphere');
+            const soundToggle = document.getElementById('soundToggle');
+            const soundIconOn = document.getElementById('soundIconOn');
+            const soundIconOff = document.getElementById('soundIconOff');
+
+            function formatSpaces(num) {
+                return Math.floor(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+            }
+
+            // Перемешивание колоды Фишера-Йетса без повторов подряд
+            function getNextPhrase() {
+                const list = PHRASES_POOL[lang] || PHRASES_POOL.ru;
+                if (phraseDeck.length === 0) {
+                    phraseDeck = list.slice();
+                    for (let i = phraseDeck.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        const temp = phraseDeck[i];
+                        phraseDeck[i] = phraseDeck[j];
+                        phraseDeck[j] = temp;
+                    }
+                }
+                return phraseDeck.pop();
+            }
+
+            function setPhrase(text) {
+                phrasePill.classList.add('fade-out');
+                setTimeout(() => {
+                    phraseText.textContent = text;
+                    phrasePill.classList.remove('fade-out');
+                }, 140);
+            }
+
+            // Отрисовка личного счета и общей полосы
+            function renderNumbers() {
+                scoreDisplay.textContent = formatSpaces(score);
+                if (globalScore < score) {
+                    globalScore = score;
+                }
+                const clampedGlobal = Math.min(GLOBAL_TARGET, globalScore);
+                const percent = Math.min(100, (clampedGlobal / GLOBAL_TARGET) * 100);
+                globalBarFill.style.width = percent.toFixed(3) + '%';
+                globalCounterText.textContent = formatSpaces(clampedGlobal) + ' / ' + formatSpaces(GLOBAL_TARGET);
+            }
+
+            // Синхронизация реальных кликов с общей базой Cloudflare D1
+            async function syncWithServer() {
+                const deltaToSend = pendingTaps;
+                pendingTaps = 0;
+                try {
+                    const response = await fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: userId,
+                            delta: deltaToSend,
+                            score: score,
+                            initData: tg ? tg.initData : ''
+                        })
+                    });
+                    if (!response.ok) throw new Error('Sync error');
+                    const data = await response.json();
+                    if (data && typeof data.globalScore === 'number') {
+                        globalScore = Math.max(score, data.globalScore + pendingTaps);
+                        localStorage.setItem(STORAGE_KEY_GLOBAL, String(globalScore));
+                        renderNumbers();
+                    }
+                } catch (e) {
+                    // Если база еще не подключена, возвращаем клики в очередь, чтобы не потерялись
+                    pendingTaps += deltaToSend;
+                }
+            }
+
+            // Загрузка сохранений из localStorage + Telegram CloudStorage
+            function loadState() {
+                const localScore = parseInt(localStorage.getItem(STORAGE_KEY_SCORE) || '0', 10);
+                const localGlobal = parseInt(localStorage.getItem(STORAGE_KEY_GLOBAL) || '0', 10);
+                if (!isNaN(localScore) && localScore > 0) score = localScore;
+                if (!isNaN(localGlobal) && localGlobal > globalScore) globalScore = localGlobal;
+
+                if (MILESTONE_PHRASES[lang] && MILESTONE_PHRASES[lang][score]) {
+                    phraseText.textContent = MILESTONE_PHRASES[lang][score];
+                } else {
+                    phraseText.textContent = (PHRASES_POOL[lang] || PHRASES_POOL.ru)[0];
+                }
+
+                renderNumbers();
+
+                if (tg && tg.CloudStorage) {
+                    try {
+                        tg.CloudStorage.getItems([STORAGE_KEY_SCORE, STORAGE_KEY_GLOBAL], function (err, values) {
+                            if (!err && values) {
+                                const cloudScore = parseInt(values[STORAGE_KEY_SCORE] || '0', 10);
+                                const cloudGlobal = parseInt(values[STORAGE_KEY_GLOBAL] || '0', 10);
+                                if (!isNaN(cloudScore) && cloudScore > score) {
+                                    score = cloudScore;
+                                    localStorage.setItem(STORAGE_KEY_SCORE, String(score));
+                                }
+                                if (!isNaN(cloudGlobal) && cloudGlobal > globalScore) {
+                                    globalScore = cloudGlobal;
+                                    localStorage.setItem(STORAGE_KEY_GLOBAL, String(globalScore));
+                                }
+                                renderNumbers();
+                                syncWithServer();
+                            }
+                        });
+                    } catch (e) {}
+                } else {
+                    syncWithServer();
+                }
+            }
+
+            let saveTimer = null;
+            function saveState() {
+                localStorage.setItem(STORAGE_KEY_SCORE, String(score));
+                localStorage.setItem(STORAGE_KEY_GLOBAL, String(globalScore));
+                if (saveTimer) clearTimeout(saveTimer);
+                saveTimer = setTimeout(() => {
+                    if (tg && tg.CloudStorage) {
+                        try {
+                            tg.CloudStorage.setItem(STORAGE_KEY_SCORE, String(score));
+                            tg.CloudStorage.setItem(STORAGE_KEY_GLOBAL, String(globalScore));
+                        } catch (e) {}
+                    }
+                }, 600);
+            }
+
+            // Мягкий ASMR-звук клика на Web Audio API
+            let audioCtx = null;
+            function playTapSound(isMilestone) {
+                if (isMuted) return;
+                try {
+                    if (!audioCtx) {
+                        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                        audioCtx = new AudioContextClass();
+                    }
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+                    const now = audioCtx.currentTime;
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+
+                    osc.type = isMilestone ? 'sine' : 'triangle';
+                    const startFreq = isMilestone ? 440 : (155 + (score % 12) * 2);
+                    osc.frequency.setValueAtTime(startFreq, now);
+                    osc.frequency.exponentialRampToValueAtTime(42, now + (isMilestone ? 0.12 : 0.045));
+
+                    gain.gain.setValueAtTime(isMilestone ? 0.14 : 0.085, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + (isMilestone ? 0.12 : 0.045));
+
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+
+                    osc.start(now);
+                    osc.stop(now + (isMilestone ? 0.12 : 0.045));
+                } catch (e) {}
+            }
+
+            function updateSoundUI() {
+                soundToggle.classList.toggle('muted', isMuted);
+                soundIconOn.style.display = isMuted ? 'none' : 'block';
+                soundIconOff.style.display = isMuted ? 'block' : 'none';
+            }
+
+            soundToggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                isMuted = !isMuted;
+                localStorage.setItem(STORAGE_KEY_MUTE, isMuted ? '1' : '0');
+                updateSoundUI();
+                if (!isMuted) playTapSound(false);
+            });
+
+            // Вылетающая цифра +1
+            function spawnFloatingPlus(x, y) {
+                const el = document.createElement('div');
+                el.className = 'floating-plus';
+                el.textContent = '+1';
+                const drift = ((Math.random() - 0.5) * 44).toFixed(1) + 'px';
+                el.style.setProperty('--tx', drift);
+                el.style.left = (x - 14) + 'px';
+                el.style.top = (y - 24) + 'px';
+                document.body.appendChild(el);
+                setTimeout(() => {
+                    if (el.parentNode) el.parentNode.removeChild(el);
+                }, 650);
+            }
+
+            // 3D-наклон сферы при нажатии
+            function applySphereTilt(clientX, clientY) {
+                const rect = tapSphere.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const dx = (clientX - centerX) / (rect.width / 2);
+                const dy = (clientY - centerY) / (rect.height / 2);
+                const rotateX = (-dy * 13).toFixed(2);
+                const rotateY = (dx * 13).toFixed(2);
+                tapSphere.style.transform = `scale(0.955) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            }
+
+            function resetSphereTilt() {
+                tapSphere.style.transform = 'scale(1) rotateX(0deg) rotateY(0deg)';
+            }
+
+            // Обработка тапа
+            function registerTap(clientX, clientY) {
+                score += 1;
+                pendingTaps += 1;
+                globalScore = Math.min(GLOBAL_TARGET, globalScore + 1);
+
+                scoreDisplay.classList.add('bump');
+                setTimeout(() => scoreDisplay.classList.remove('bump'), 85);
+
+                const milestones = MILESTONE_PHRASES[lang] || MILESTONE_PHRASES.ru;
+                const isMilestone = Boolean(milestones[score]);
+
+                if (isMilestone) {
+                    setPhrase(milestones[score]);
+                } else if (score % 15 === 0) {
+                    setPhrase(getNextPhrase());
+                }
+
+                playTapSound(isMilestone);
+
+                if (tg && tg.HapticFeedback) {
+                    try {
+                        tg.HapticFeedback.impactOccurred(isMilestone ? 'medium' : 'light');
+                    } catch (e) {}
+                }
+
+                applySphereTilt(clientX, clientY);
+                spawnFloatingPlus(clientX, clientY);
+                renderNumbers();
+                saveState();
+            }
+
+            // Поддержка мультитача без залипаний
+            let lastTouchTime = 0;
+            tapSphere.addEventListener('touchstart', function (e) {
+                e.preventDefault();
+                lastTouchTime = Date.now();
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const t = e.changedTouches[i];
+                    registerTap(t.clientX, t.clientY);
+                }
+            }, { passive: false });
+
+            tapSphere.addEventListener('touchend', function () {
+                resetSphereTilt();
+            });
+
+            tapSphere.addEventListener('touchcancel', function () {
+                resetSphereTilt();
+            });
+
+            tapSphere.addEventListener('pointerdown', function (e) {
+                if (Date.now() - lastTouchTime < 500) return;
+                registerTap(e.clientX, e.clientY);
+            });
+
+            window.addEventListener('pointerup', resetSphereTilt);
+
+            // Опрос базы каждые 3 секунды: отправка своих кликов и получение реальных кликов других игроков
+            setInterval(syncWithServer, 3000);
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'hidden' && pendingTaps > 0) {
+                    syncWithServer();
+                }
+            });
+
+            updateSoundUI();
+            loadState();
+        })();
+    </script>
+</body>
+</html>
